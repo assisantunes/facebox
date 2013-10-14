@@ -1,6 +1,6 @@
 /*
  * Facebox (for jQuery)
- * version: 1.3
+ * version: 1.3.0.2
  * @requires jQuery v1.2 or later
  * @homepage https://github.com/defunkt/facebox
  *
@@ -67,13 +67,14 @@
  */
 (function($) {
   $.facebox = function(data, klass) {
-    $.facebox.loading(data.settings || [])
+    $.facebox.loading(function(){
 
-    if (data.ajax) fillFaceboxFromAjax(data.ajax, klass)
-    else if (data.image) fillFaceboxFromImage(data.image, klass)
-    else if (data.div) fillFaceboxFromHref(data.div, klass)
-    else if ($.isFunction(data)) data.call($)
-    else $.facebox.reveal(data, klass)
+        if (data.ajax)          fillFaceboxFromAjax(data.ajax, klass)
+        else if (data.image)    fillFaceboxFromImage(data.image, klass)
+        else if (data.div)      fillFaceboxFromHref(data.div, klass)
+        else if ($.isFunction(data)) data.call($)
+        else $.facebox.reveal(data, klass)
+    })
   }
 
   /*
@@ -84,51 +85,94 @@
     settings: {
       opacity      : 0.2,
       overlay      : true,
-      loadingImage : '/facebox/loading.gif',
-      closeImage   : '/facebox/closelabel.png',
       imageTypes   : [ 'png', 'jpg', 'jpeg', 'gif' ],
       faceboxHtml  : '\
     <div id="facebox" style="display:none;"> \
       <div class="popup"> \
         <div class="content"> \
+            <div class="into-content"> \
+                <div class="into-content-main"> \
+                </div> \
+            </div> \
         </div> \
-        <a href="#" class="close"></a> \
+        <a href="#" class="close"> </a> \
       </div> \
     </div>'
     },
 
-    loading: function() {
+    loading: function(callback) {
       init()
-      if ($('#facebox .loading').length == 1) return true
+      if ($.facebox.settings.loading) return true
+      $.facebox.settings.loading = true
       showOverlay()
-
-      $('#facebox .content').empty().
-        append('<div class="loading"><img src="'+$.facebox.settings.loadingImage+'"/></div>')
-
-      $('#facebox').show().css({
-        top:	getPageScroll()[1] + (getPageHeight() / 10),
-        left:	$(window).width() / 2 - ($('#facebox .popup').outerWidth() / 2)
-      })
-
-      $(document).bind('keydown.facebox', function(e) {
-        if (e.keyCode == 27) $.facebox.close()
-        return true
-      })
-      $(document).trigger('loading.facebox')
+      
+      $.facebox.resize()
+      
+      $('#facebox .into-content').fadeTo('fast', 0, function(){
+        $('#facebox .into-content-main').children().hide().end().
+          append('<div class="loading"></div>')
+        
+        $('#facebox').show()
+        
+        $('#facebox .popup').show()
+        $(document).bind('keydown.facebox', function(e) {
+            if (e.keyCode == 27) $.facebox.close()
+                return true
+            })
+        $(document).trigger('loading.facebox')
+        if(callback!=undefined) callback();
+      });
     },
 
     reveal: function(data, klass) {
-      $(document).trigger('beforeReveal.facebox')
-      if (klass) $('#facebox .content').addClass(klass)
-      $('#facebox .content').empty().append(data)
-      $('#facebox .popup').children().fadeIn('normal')
-      $('#facebox').css('left', $(window).width() / 2 - ($('#facebox .popup').outerWidth() / 2))
-      $(document).trigger('reveal.facebox').trigger('afterReveal.facebox')
+      $(document).trigger('beforeReveal.facebox');
+      if (klass) $('#facebox .content').addClass(klass);
+      
+      $('#facebox .loading').remove();
+      $.facebox.settings.loading = false;
+      
+      //alert(data);
+      $('#facebox .into-content-main').html(data);
+      $.facebox.resize();
+      $('#facebox .into-content').fadeTo('fast', 1);
+      
+      $(document).trigger('reveal.facebox').trigger('afterReveal.facebox');
     },
 
     close: function() {
       $(document).trigger('close.facebox')
       return false
+    },
+    resize:function(fast){
+        //Resize
+        if($('#facebox .into-content').width()!=0 && $('#facebox .into-content').height()!=0){
+            $('#facebox .content').css('width',     $('#facebox .into-content').width());
+            $('#facebox .content').css('height',    $('#facebox .into-content').height());
+            var finalWidth = $('#facebox .into-content').width();
+            var finalHeight = $('#facebox .into-content').height();
+        }else{
+            var finalWidth = $('#facebox .content').width();
+            var finalHeight = $('#facebox .content').height();
+        }
+
+        //Position
+        var leftFinal = $(window).width() / 2 - (finalWidth / 2);
+        var topFinal = $(window).height() / 2 - (finalHeight / 2);
+        
+        if ($.browser.msie && $.browser.version.substr(0,1) <= 7)
+            topFinal = finalHeight==100?50:topFinal;
+        
+        $('#facebox').stop();
+        $('#facebox').animate(
+            {
+                left:leftFinal,
+                top:topFinal
+            }, fast?0:'fast'
+        );
+        /*
+        $('#facebox').css('left', $(window).width() / 2 - ($('#facebox .popup').width() / 2));
+        $('#facebox').css('top', $(window).height() / 2 - ($('#facebox .popup').height() / 2));
+        */
     }
   })
 
@@ -164,30 +208,26 @@
   function init(settings) {
     if ($.facebox.settings.inited) return true
     else $.facebox.settings.inited = true
-
+    
     $(document).trigger('init.facebox')
     makeCompatible()
 
     var imageTypes = $.facebox.settings.imageTypes.join('|')
-    $.facebox.settings.imageTypesRegexp = new RegExp('\\.(' + imageTypes + ')(\\?.*)?$', 'i')
+    $.facebox.settings.imageTypesRegexp = new RegExp('\.(' + imageTypes + ')$', 'i')
 
     if (settings) $.extend($.facebox.settings, settings)
     $('body').append($.facebox.settings.faceboxHtml)
 
     var preload = [ new Image(), new Image() ]
-    preload[0].src = $.facebox.settings.closeImage
-    preload[1].src = $.facebox.settings.loadingImage
 
     $('#facebox').find('.b:first, .bl').each(function() {
       preload.push(new Image())
       preload.slice(-1).src = $(this).css('background-image').replace(/url\((.+)\)/, '$1')
     })
 
-    $('#facebox .close')
-      .click($.facebox.close)
-      .append('<img src="'
-              + $.facebox.settings.closeImage
-              + '" class="close_image" title="close">')
+    $('#facebox .close').click($.facebox.close)
+    
+    $.facebox.resize(true)
   }
 
   // getPageScroll() by quirksmode.com
@@ -196,7 +236,7 @@
     if (self.pageYOffset) {
       yScroll = self.pageYOffset;
       xScroll = self.pageXOffset;
-    } else if (document.documentElement && document.documentElement.scrollTop) {	 // Explorer 6 Strict
+    } else if (document.documentElement && document.documentElement.scrollTop) {     // Explorer 6 Strict
       yScroll = document.documentElement.scrollTop;
       xScroll = document.documentElement.scrollLeft;
     } else if (document.body) {// all other Explorers
@@ -209,7 +249,7 @@
   // Adapted from getPageSize() by quirksmode.com
   function getPageHeight() {
     var windowHeight
-    if (self.innerHeight) {	// all except Explorer
+    if (self.innerHeight) { // all except Explorer
       windowHeight = self.innerHeight;
     } else if (document.documentElement && document.documentElement.clientHeight) { // Explorer 6 Strict Mode
       windowHeight = document.documentElement.clientHeight;
@@ -223,8 +263,6 @@
   function makeCompatible() {
     var $s = $.facebox.settings
 
-    $s.loadingImage = $s.loading_image || $s.loadingImage
-    $s.closeImage = $s.close_image || $s.closeImage
     $s.imageTypes = $s.image_types || $s.imageTypes
     $s.faceboxHtml = $s.facebox_html || $s.faceboxHtml
   }
@@ -260,16 +298,17 @@
   }
 
   function fillFaceboxFromAjax(href, klass) {
-    $.facebox.jqxhr = $.get(href, function(data) { $.facebox.reveal(data, klass) })
+    $.get(href, function(data) { $.facebox.reveal(data, klass) })
   }
 
   function skipOverlay() {
-    return $.facebox.settings.overlay == false || $.facebox.settings.opacity === null
+    return ($.facebox.settings.overlay == false || $.facebox.settings.opacity === null)
   }
 
   function showOverlay() {
-    if (skipOverlay()) return
-
+    if (skipOverlay() || $.facebox.settings.initedOverlay) return
+    $.facebox.settings.initedOverlay = true;
+    
     if ($('#facebox_overlay').length == 0)
       $("body").append('<div id="facebox_overlay" class="facebox_hide"></div>')
 
@@ -282,7 +321,7 @@
 
   function hideOverlay() {
     if (skipOverlay()) return
-
+    $.facebox.settings.initedOverlay = false;
     $('#facebox_overlay').fadeOut(200, function(){
       $("#facebox_overlay").removeClass("facebox_overlayBG")
       $("#facebox_overlay").addClass("facebox_hide")
@@ -297,11 +336,8 @@
    */
 
   $(document).bind('close.facebox', function() {
-    if ($.facebox.jqxhr) {
-      $.facebox.jqxhr.abort()
-      $.facebox.jqxhr = null
-    }
     $(document).unbind('keydown.facebox')
+    $('#facebox .popup').fadeOut()
     $('#facebox').fadeOut(function() {
       $('#facebox .content').removeClass().addClass('content')
       $('#facebox .loading').remove()
